@@ -20,6 +20,7 @@ class gridSettings:
     lineWeightAxis: int # line weight for x/y axes
     lineWeightMajor: int # line weight for major gridlines
     lineWeightMinor: int # line weight for subdividing gridlines
+    labelScale: int
 
 @dataclass
 class funcSettings:
@@ -36,14 +37,15 @@ FUNCDEFAULT = lambda: funcSettings(
         )
 
 GRIDDEFAULT = lambda: gridSettings(
-        4,
-        4,
+        128,
+        128,
         (128, 2),
         (255, 255, 255),
         (0, 0, 0),
         2,
         2,
-        1
+        1,
+        15
         )
 
 NINETYDEG = math.pi/2
@@ -100,11 +102,11 @@ class grid:
             else:
                 continue
             if axis == "x":
-                newLine = pygame.Rect((-lineweight/2), 0, lineweight, (rng[1] - rng[0]) * transform[1])
-                newLine.x = grade - rng[0] - (lineweight / 2)
+                newLine = pygame.Rect((-lineweight/2), 0, lineweight, (region.height) * transform[1])
+                newLine.x += grade - region.left - (lineweight / 2)
             elif axis == "y":
-                newLine = pygame.Rect(lineweight/2, 0, (rng[1] - rng[0]) * transform[0], lineweight)
-                newLine.y = grade - rng[0] - (lineweight / 2)
+                newLine = pygame.Rect(0, lineweight/2, (region.width) * transform[0], lineweight)
+                newLine.y += grade - region.top - (lineweight / 2)
             pygame.draw.rect(surface, self.settings.lineColor, newLine)
     def drawGridlines(self, region, surface):
         self.drawGridlinesForAxis(region, surface, "x")
@@ -143,7 +145,6 @@ class grid:
             width = function.settings.lineWidth
             typ = function.settings.lineType
             path = []
-            lowestNotVisible = None
             # can be optimized store to f(x-1) and f(x+1), but runs fine as-is
             for x in range(region.left, region.right + 1): # + 1 to make sure the line doesn't cut off right before the edge
                 y = -function.call(x)
@@ -157,19 +158,36 @@ class grid:
                         continue
                 pos = (localX, localY)
                 path.append(pos)
-            self.plotPath(surface, path, width, color, typ, 10)
+            #optimize:
+            if typ == linetype.solid:
+                self.plotPathFast(surface, path, width, color)
+            else:
+                self.plotPath(surface, path, width, color, typ, 10)
     
-    def labelAxes(self, region):
-        pass
+    def labelAxes(self, region, surface):
+        renderer = pygame.freetype.SysFont(pygame.freetype.get_default_font(), self.settings.labelScale)
+        _, minBox = renderer.render("012345679")
+        minHeight = minBox[1]
+        xAxis = 0 - region.left
+        yAxis = 0 + region.bottom
+        if region.right < 0:
+            xAxis = region.right
+        elif region.left > 0:
+            xAxis = region.left
+        for i in range(region.top - minHeight, region.bottom):
+            if i % self.settings.labelYInterval == 0:
+                iGlobal = i - region.top
+                newLabel, rect = renderer.render(str(-i))
+                surface.blit(newLabel, (xAxis, iGlobal))
 
     def render(self, region):
         region = pygame.Rect(region)
 
-        surface = pygame.Surface((region.width, region.height))
+        surface = pygame.Surface((region.size))
         surface.fill(self.settings.gridColor)
         self.drawGridlines(region, surface)
         self.graphFunctions(region, surface)
-        self.labelAxes(region)
+        self.labelAxes(region, surface)
 
         return surface
 
@@ -190,6 +208,7 @@ if __name__ == '__main__':
     g.addFuncFromString("-x")
     g.addFuncFromString("(1/100)x ^ 2")
     g.addFuncFromString("2x")
+    g.addFuncFromString("-18")
     g.functions[0].settings.lineType = linetype.solid
     g.functions[0].settings.lineColor = (0, 0, 255)
     g.functions[0].settings.lineWidth = 2
@@ -199,7 +218,11 @@ if __name__ == '__main__':
     g.functions[2].settings.lineType = linetype.dotted
     g.functions[2].settings.lineColor = (255, 0, 255)
     g.functions[2].settings.lineWidth = 6
+    g.functions[3].settings.lineType = linetype.squiggly
+    g.functions[3].settings.lineColor = (0, 255, 0)
+    g.functions[3].settings.lineWidth = 8
     pygame.init()
+    pygame.font.init()
     screen = pygame.display.set_mode((800, 800))
     running = True
     while running:
