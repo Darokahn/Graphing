@@ -5,6 +5,7 @@ import postfix
 import time
 import math
 
+
 class linetype:
     solid = 0
     dotted = 1
@@ -12,51 +13,32 @@ class linetype:
 
 @dataclass
 class gridSettings:
-    labelXInterval: int # negative for no label
-    labelYInterval: int
-    gridDivision: tuple # (Main frequency, subdivision)
-    gridColor: tuple
-    lineColor: tuple
-    lineWeightAxis: int # line weight for x/y axes
-    lineWeightMajor: int # line weight for major gridlines
-    lineWeightMinor: int # line weight for subdividing gridlines
-    labelScale: int
+    labelXInterval: int = 128 # negative for no label
+    labelYInterval: int = 128
+    gridDivision: tuple = (128, 2) # (Main frequency, subdivision)
+    gridColor: tuple = (255, 255, 255)
+    lineColor: tuple = (0, 0, 0)
+    lineWeightAxis: int = 4 # line weight for x/y axes
+    lineWeightMajor: int = 3 # line weight for major gridlines
+    lineWeightMinor: int = 2 # line weight for subdividing gridlines
+    labelScale: int = 15
+    maxFunctionSegments: int = 1000
 
 @dataclass
 class funcSettings:
-    lineType: int
-    lineColor: tuple
-    lineWidth: int
-    visible: bool
-
-FUNCDEFAULT = lambda: funcSettings(
-        linetype.solid,
-        (0, 0, 0),
-        2,
-        True
-        )
-
-GRIDDEFAULT = lambda: gridSettings(
-        128,
-        128,
-        (128, 2),
-        (255, 255, 255),
-        (0, 0, 0),
-        2,
-        2,
-        1,
-        15
-        )
+    lineType: int = linetype.solid
+    lineColor: tuple = (0, 0, 0)
+    lineWidth: int = 2
+    visible: bool = True
 
 NINETYDEG = math.pi/2
-FORTYFIVEDEG = math.pi/4
 
 @dataclass
 class function:
     def __init__(self, expression, settings=None):
         self.expression = expression
         self.call = postfix.getFunctionFromPostfix(self.expression)
-        self.settings = settings or FUNCDEFAULT()
+        self.settings = settings or funcSettings()
     def drawCurve(self, region):
         raise NotImplementedError()
 
@@ -79,8 +61,13 @@ def drawSquiggly(surface, position, lineWidth, lineColor, progress, normal):
 class grid:
     plotMethods = [drawSolid, drawDotted, drawSquiggly]
     def __init__(self, settings=None):
-        self.settings = settings or GRIDDEFAULT()
+        self.settings = settings or gridSettings
         self.functions = []
+    @staticmethod
+    def translateToRegion(point, region):
+        point = point[0] - region.left, point[1] - region.top
+        return point
+
     def drawGridlinesForAxis(self, region, surface, axis):
         if axis == "x":
             transform = (0, 1)
@@ -111,58 +98,62 @@ class grid:
     def drawGridlines(self, region, surface):
         self.drawGridlinesForAxis(region, surface, "x")
         self.drawGridlinesForAxis(region, surface, "y")
-    def plotPath(self, surface, path, lineWidth, lineColor, lineType, step = 1):
+    def plotPath(self, surface, relativeRegion, path, lineWidth, lineColor, lineType, step = 1):
         progress = 0
-        lastPoint = path[0]
+        if not path:
+            return
+        lastPoint = path.pop(0)
         for nextPoint in path:
             dx, dy = nextPoint[0] - lastPoint[0], nextPoint[1] - lastPoint[1]
             normal = math.atan2(dy, dx)
-            magnitude = math.sqrt((dx ** 2) + (dy ** 2)) * step
+            magnitude = math.sqrt((dx ** 2) + (dy ** 2))
             if lastPoint != nextPoint:
-                increment = dx/magnitude, dy/magnitude
+                increment = (dx/magnitude) * step, (dy/magnitude) * step
             while lastPoint != nextPoint:
                 if abs(nextPoint[0] - lastPoint[0]) < abs(increment[0]) or abs(nextPoint[1] - lastPoint[1]) < abs(increment[1]):
-                    progress += math.sqrt(((nextPoint[0] - lastPoint[0]) ** 2) + ((nextPoint[1] - lastPoint[1]) ** 2))
+                    progress += math.sqrt(((nextPoint[0] - lastPoint[0]) ** 2) + ((nextPoint[1] - lastPoint[1]) ** 2)) * step
                     lastPoint = nextPoint
                 else:
                     lastPoint = lastPoint[0] + increment[0], lastPoint[1] + increment[1]
-                    progress += 1
+                    progress += 1 * step
                 self.plotMethods[lineType](surface, lastPoint, lineWidth, lineColor, (progress * 1 / step) * 10, normal)
     def plotPathFast(self, surface, path, lineWidth, lineColor, *_):
+        if not path:
+            return
         lastPoint = path.pop(0)
         for nextPoint in path:
             pygame.draw.line(surface, lineColor, lastPoint, nextPoint, lineWidth)
             lastPoint = nextPoint
 
     def graphFunctions(self, region, surface):
+        lineSurface = pygame.Surface((region.width, region.height))
+        lineSurface.set_colorkey((255, 255, 255))
         for function in self.functions:
             if not function.settings.visible:
                 continue
-            lineSurface = pygame.Surface((region.width, region.height))
             lineSurface.fill((255, 255, 255))
-            lineSurface.set_colorkey((255, 255, 255))
             color = function.settings.lineColor
             width = function.settings.lineWidth
             typ = function.settings.lineType
+
             path = []
-            # can be optimized store to f(x-1) and f(x+1), but runs fine as-is
-            for x in range(region.left, region.right + 1): # + 1 to make sure the line doesn't cut off right before the edge
-                y = -function.call(x)
-                localX = x - region.left
-                localY = y - region.top
-                if localY > region.height or localY < 0:
-                    if (
-                    not 0 < (-function.call(x-1) - region.top) < region.height and 
-                    not 0 < (-function.call(x+1) - region.top) < region.height
-                    ):
-                        continue
-                pos = (localX, localY)
-                path.append(pos)
-            #optimize:
-            if typ == linetype.solid:
-                self.plotPathFast(surface, path, width, color)
-            else:
-                self.plotPath(surface, path, width, color, typ, 10)
+            rng = range(region.left, region.right + 1)
+            segments = len(rng)
+            maxSegments = self.settings.maxFunctionSegments
+            step = max(segments // maxSegments, 1)
+            yValues = [None, None, None]
+            for x in range(rng.start, rng.stop, step):
+                if not yValues[1]:
+                    yValues[1] = -function.call(x)
+                yValues[2] = -function.call(x + 1)
+                y = yValues[1]
+                point = (x, y)
+                point = grid.translateToRegion(point, region)
+                if not all((yValue is not None and not 0 < yValue - region.top < region.height for yValue in yValues)):
+                    path.append(point)
+                yValues = [yValues[1], yValues[2], None]
+            self.plotPath(surface, region, path, width, color, typ, 3)
+        return
     
     def labelAxes(self, region, surface):
         renderer = pygame.freetype.SysFont(pygame.freetype.get_default_font(), self.settings.labelScale)
@@ -188,7 +179,6 @@ class grid:
         self.drawGridlines(region, surface)
         self.graphFunctions(region, surface)
         self.labelAxes(region, surface)
-
         return surface
 
     def addFunc(self, func):

@@ -144,17 +144,17 @@ def calculatePostfix(postfixList):
             continue
         if isinstance(item, operator):
             if item.binary:
-                try:
+                if len(stack) >= 2:
                     op2 = stack.pop()
                     op1 = stack.pop()
                     stack.append(item(op1, op2))
-                except IndexError:
+                else:
                     raise ValueError("attempt to perform binary operation on stack of length <=1")
             else:
-                try:
+                if len(stack) >= 1:
                     op = stack.pop()
                     stack.append(item(op))
-                except IndexError:
+                else:
                     raise ValueError("attempt to perform unary operation on stack of length 0")
     if len(stack) > 1:
         raise ValueError("unresolved expression")
