@@ -205,15 +205,13 @@ def calculateStr(string):
 
 def main():
     test_expressions = [
-        "-5 - 1",
-        "3x + 12 - 13 + (500 * 3)",
-        "4x"
+        "x"
     ]
 
     for expr in test_expressions:
         try:
             result = getFunc(expr)
-            print(f"f(3): {result(3, 2, 1, 3)}")
+            print(f"f(3): {result(1)}")
         except Exception as e:
             print(f"Error evaluating '{expr}': {e}")
 

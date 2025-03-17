@@ -25,7 +25,7 @@ class Camera:
         self.screen = screen
     def getPanDifference(self):
         scale = self.getScaleDifference()
-        return (self.panStart[0] - self.panCurrent[0]) * scale[0], (self.panStart[1] - self.panCurrent[1]) * scale[1]
+        return (self.panStart[0] - self.panCurrent[0]), (self.panStart[1] - self.panCurrent[1])
     def lockPan(self):
         panDifference = self.getPanDifference()
         self.position = (self.position[0] + panDifference[0], self.position[1] + panDifference[1])
@@ -48,7 +48,7 @@ class Camera:
         if self.panning:
             panDifference = self.getPanDifference()
             viewport.center = (viewport.center[0] + panDifference[0], viewport.center[1] + panDifference[1])
-        return self.renderable.render(viewport)
+        return self.renderable.render(viewport.center, self.screen.get_rect().size, self.getScaleDifference())
     def zoomTo(self, amount):
         difference = self.zoomMagnitude - amount
         self.zoom(1, difference)
@@ -127,12 +127,10 @@ def main():
                 "lineWeightMinor": 3,
             }
         })
-    g.addFuncFromString("x", (0, 0, 255), grid.linetype.solid, 2)
-    g.addFuncFromString("x", (0, 255, 0), grid.linetype.squiggly, 4)
-    g.addFuncFromString("((1/10)x)^2", (0, 100, 0), grid.linetype.solid, 4)
-    g.addFuncFromString("(1/100)x ^ 2", (255, 0, 0), grid.linetype.squiggly, 4)
-    g.addFuncFromString("2x + 10", (255, 0, 255), grid.linetype.dotted, 6)
-    g.addFuncFromString("-18", (0, 255, 0), grid.linetype.solid, 8)
+    g.addFuncFromString("x", (0, 0, 255), grid.linetype.squiggly, 4)
+    g.addFuncFromString("-x", (255, 0, 255), grid.linetype.solid, 4)
+    g.addFuncFromString("x^2 + 10", (255, 0, 255), grid.linetype.solid, 4)
+
     surface = c.render()
     running = True
     while running:

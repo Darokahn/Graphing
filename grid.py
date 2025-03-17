@@ -35,8 +35,11 @@ NINETYDEG = math.pi/2
 
 @dataclass
 class function:
-    def __init__(self, expression, settings=None):
-        self.expression = expression
+    def __init__(self, string, settings=None):
+        self.name = string
+        infixExpression = postfix.strToInfix(string)
+        postfixExpression = postfix.infixToPostfix(infixExpression)
+        self.expression = postfixExpression
         self.call = postfix.getFunctionFromPostfix(self.expression)
         self.settings = settings or funcSettings()
     def drawCurve(self, region):
@@ -68,126 +71,72 @@ class grid:
         point = point[0] - region.left, point[1] - region.top
         return point
 
-    def drawGridlinesForAxis(self, region, surface, axis):
-        if axis == "x":
-            transform = (0, 1)
-            rng = (region.left, region.right)
-        elif axis == "y":
-            rng = (region.top, region.bottom)
-            transform = (1, 0)
-        else:
-            raise ValueError(f"axis should be \"x\" or \"y\"; got {axis}")
-        frequency, subdivision = self.settings.gridDivision
-        for grade in range(*rng):
-            lineweight = 0
-            if grade == 0:
-                lineweight = self.settings.lineWeightAxis
-            elif (grade % frequency) == 0:
-                lineweight = self.settings.lineWeightMajor
-            elif (grade % (frequency/subdivision)) == 0:
-                lineweight = self.settings.lineWeightMinor
-            else:
-                continue
-            if axis == "x":
-                newLine = pygame.Rect((-lineweight/2), 0, lineweight, (region.height) * transform[1])
-                newLine.x += grade - region.left - (lineweight / 2)
-            elif axis == "y":
-                newLine = pygame.Rect(0, lineweight/2, (region.width) * transform[0], lineweight)
-                newLine.y += grade - region.top - (lineweight / 2)
-            pygame.draw.rect(surface, self.settings.lineColor, newLine)
-    def drawGridlines(self, region, surface):
-        self.drawGridlinesForAxis(region, surface, "x")
-        self.drawGridlinesForAxis(region, surface, "y")
-    def plotPath(self, surface, relativeRegion, path, lineWidth, lineColor, lineType, step = 1):
+    def drawGridlines(self, surface, initial, frequencyMap, viewportSize):
+        pass
+
+    def drawAllGridlines(self, surface, position, viewportSize, zoom):
+        pass
+    
+    def drawLabels(self, surface, position, viewportSize, zoom):
+        pass
+
+    def plotPathMachine(self, surface, lineWidth, lineColor, lineType, step):
         progress = 0
-        if not path:
-            return
-        lastPoint = path.pop(0)
-        for nextPoint in path:
+        lastPoint = yield
+        plotMethod = self.plotMethods[lineType]
+        while (nextPoint := (yield)) is not None:
             dx, dy = nextPoint[0] - lastPoint[0], nextPoint[1] - lastPoint[1]
             normal = math.atan2(dy, dx)
             magnitude = math.sqrt((dx ** 2) + (dy ** 2))
+            increment = 0
             if lastPoint != nextPoint:
                 increment = (dx/magnitude) * step, (dy/magnitude) * step
             while lastPoint != nextPoint:
-                if abs(nextPoint[0] - lastPoint[0]) < abs(increment[0]) or abs(nextPoint[1] - lastPoint[1]) < abs(increment[1]):
-                    progress += math.sqrt(((nextPoint[0] - lastPoint[0]) ** 2) + ((nextPoint[1] - lastPoint[1]) ** 2)) * step
+                dxCurrent = nextPoint[0] - lastPoint[0]
+                dyCurrent = nextPoint[1] - lastPoint[1]
+                if abs(dxCurrent) < abs(increment[0]) or abs(dyCurrent) < abs(increment[1]):
+                    progress += math.sqrt((dxCurrent ** 2) + (dyCurrent ** 2)) * step
                     lastPoint = nextPoint
                 else:
-                    lastPoint = lastPoint[0] + increment[0], lastPoint[1] + increment[1]
                     progress += 1 * step
-                self.plotMethods[lineType](surface, lastPoint, lineWidth, lineColor, (progress * 1 / step) * 10, normal)
-    def plotPathFast(self, surface, path, lineWidth, lineColor, *_):
-        if not path:
-            return
-        lastPoint = path.pop(0)
-        for nextPoint in path:
-            pygame.draw.line(surface, lineColor, lastPoint, nextPoint, lineWidth)
-            lastPoint = nextPoint
+                    lastPoint = lastPoint[0] + increment[0], lastPoint[1] + increment[1]
+                plotMethod(surface, lastPoint, lineWidth, lineColor, progress, normal)
 
-    def graphFunctions(self, region, surface):
-        lineSurface = pygame.Surface((region.width, region.height))
-        lineSurface.set_colorkey((255, 255, 255))
-        for function in self.functions:
-            if not function.settings.visible:
-                continue
-            lineSurface.fill((255, 255, 255))
-            color = function.settings.lineColor
-            width = function.settings.lineWidth
-            typ = function.settings.lineType
+    def drawFunctions(self, surface, position, viewportSize, zoom):
+        start = next
+        for func in self.functions:
+            plotter = self.plotPathMachine(surface, func.settings.lineWidth * (1/zoom[0]), func.settings.lineColor, func.settings.lineType, 10)
+            start(plotter)
+            rng = range(round(position[0] - viewportSize[0]/2), round(position[0] + viewportSize[0]/2))
+            for index, x in enumerate(rng):
+                y = -func.call(x * zoom[0]) # negate to translate to graphics coordinate system
+                y /= zoom[1]
+                y -= position[1]
 
-            path = []
-            rng = range(region.left, region.right + 1)
-            segments = len(rng)
-            maxSegments = self.settings.maxFunctionSegments
-            step = max(segments // maxSegments, 1)
-            yValues = [None, None, None]
-            for x in range(rng.start, rng.stop, step):
-                if not yValues[1]:
-                    yValues[1] = -function.call(x)
-                yValues[2] = -function.call(x + 1)
-                y = yValues[1]
-                point = (x, y)
-                point = grid.translateToRegion(point, region)
-                if not all((yValue is not None and not 0 < yValue - region.top < region.height for yValue in yValues)):
-                    path.append(point)
-                yValues = [yValues[1], yValues[2], None]
-            self.plotPath(surface, region, path, width, color, typ, 3)
-        return
-    
-    def labelAxes(self, region, surface):
-        renderer = pygame.freetype.SysFont(pygame.freetype.get_default_font(), self.settings.labelScale)
-        _, minBox = renderer.render("012345679")
-        minHeight = minBox[1]
-        xAxis = 0 - region.left
-        yAxis = 0 + region.bottom
-        if region.right < 0:
-            xAxis = region.right
-        elif region.left > 0:
-            xAxis = region.left
-        for i in range(region.top - minHeight, region.bottom):
-            if i % self.settings.labelYInterval == 0:
-                iGlobal = i - region.top
-                newLabel, rect = renderer.render(str(-i))
-                surface.blit(newLabel, (xAxis, iGlobal))
+                if all((
+                    not (0 < (func.call(x-1) / zoom[1]) - position[1] < viewportSize[1]), 
+                    not (0 < (y < viewportSize[1])), 
+                    not (0 < (func.call(x+1) / zoom[1]) - position[1] < viewportSize[1])
+                    )):
+                    continue
 
-    def render(self, region):
-        region = pygame.Rect(region)
+                plotter.send([index, y])
+            plotter.close()
 
-        surface = pygame.Surface((region.size))
+    def render(self, position, viewportSize, zoom):
+        surface = pygame.Surface(viewportSize)
         surface.fill(self.settings.gridColor)
-        self.drawGridlines(region, surface)
-        self.graphFunctions(region, surface)
-        self.labelAxes(region, surface)
+
+        self.drawAllGridlines(surface, position, viewportSize, zoom)
+        self.drawLabels(surface, position, viewportSize, zoom)
+        self.drawFunctions(surface, position, viewportSize, zoom)
         return surface
 
     def addFunc(self, func):
         self.functions.append(func)
     
     def addFuncFromString(self, string, lineColor = None, lineType = None, lineWidth = None):
-        infixExpression = postfix.strToInfix(string)
-        postfixExpression = postfix.infixToPostfix(infixExpression)
-        f = function(postfixExpression)
+        f = function(string)
         f.settings.lineType = lineType or f.settings.lineType
         f.settings.lineColor = lineColor or f.settings.lineColor
         f.settings.lineWidth = lineWidth or f.settings.lineWidth
