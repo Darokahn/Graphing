@@ -155,21 +155,27 @@ class grid:
             self.plotPath(surface, region, path, width, color, typ, 3)
         return
     
-    def labelAxes(self, region, surface):
+    def labelXAxis(self, region, surface):
         renderer = pygame.freetype.SysFont(pygame.freetype.get_default_font(), self.settings.labelScale)
         _, minBox = renderer.render("012345679")
         minHeight = minBox[1]
-        xAxis = 0 - region.left
-        yAxis = 0 + region.bottom
+        minWidth = minBox[0]
+        xAxis = -region.left
+        yAxis = region.bottom
+        direction = "right"
         if region.right < 0:
-            xAxis = region.right
+            xAxis = region.width
+            direction = "left"
         elif region.left > 0:
-            xAxis = region.left
+            xAxis = 0
         for i in range(region.top - minHeight, region.bottom):
             if i % self.settings.labelYInterval == 0:
                 iGlobal = i - region.top
                 newLabel, rect = renderer.render(str(-i))
-                surface.blit(newLabel, (xAxis, iGlobal))
+                offset = [2, 2]
+                if direction == "left":
+                    offset[0] = -offset[0] -rect.width
+                surface.blit(newLabel, (xAxis + offset[0], iGlobal + offset[1]))
 
     def render(self, region):
         region = pygame.Rect(region)
@@ -178,7 +184,7 @@ class grid:
         surface.fill(self.settings.gridColor)
         self.drawGridlines(region, surface)
         self.graphFunctions(region, surface)
-        self.labelAxes(region, surface)
+        self.labelXAxis(region, surface)
         return surface
 
     def addFunc(self, func):
