@@ -2,6 +2,7 @@ import grid
 import pygame
 import math
 import time
+import threading
 from dataclasses import dataclass, field
 
 def normalizeRatio(ratio):
@@ -129,13 +130,20 @@ def main():
         })
     g.addFuncFromString("x", (0, 0, 255), grid.linetype.solid, 2)
     g.addFuncFromString("x", (0, 255, 0), grid.linetype.squiggly, 4)
-    g.addFuncFromString("((1/10)x)^2", (0, 100, 0), grid.linetype.solid, 4)
     g.addFuncFromString("(1/100)x ^ 2", (255, 0, 0), grid.linetype.squiggly, 4)
     g.addFuncFromString("2x + 10", (255, 0, 255), grid.linetype.dotted, 6)
-    g.addFuncFromString("-18", (0, 255, 0), grid.linetype.solid, 8)
     surface = c.render()
     running = True
+    inputBuffer = {"text": None}
+    def getInput():
+        while True:
+            inputBuffer["text"] = input("input a new equation: ")
+    getInputThread = threading.Thread(target=getInput)
+    getInputThread.start()
     while running:
+        if inputBuffer["text"] is not None:
+            g.addFuncFromString(inputBuffer["text"], lineWidth=5)
+            inputBuffer["text"] = None
         surface = c.render()
         surface = pygame.transform.scale(surface, screen.get_rect().size)
         screen.blit(surface, (0, 0))
@@ -146,5 +154,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-else:
-    raise Exception("This script should not be used as a module")
