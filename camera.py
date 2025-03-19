@@ -105,7 +105,15 @@ def main():
     g = grid.grid()
     c = Camera(0, 0, 800, 0.1, 100, g, screenRatio, screen)
     u = UI(c, {
-            (0, 1): {
+            (0, 0.5): {
+                "gridDivision": (16, 1),
+                "lineWeightAxis": 2,
+                "lineWeightMajor": 1,
+                "lineWeightMinor": 1,
+                "labelXInterval": 64,
+                "labelYInterval": 64,
+                },
+            (0.5, 1): {
                 "gridDivision": (128, 2),
                 "lineWeightAxis": 4,
                 "lineWeightMajor": 3,
@@ -128,10 +136,13 @@ def main():
                 "lineWeightMinor": 3,
             }
         })
+    """
     g.addFuncFromString("x", (0, 0, 255), grid.linetype.solid, 2)
     g.addFuncFromString("x", (0, 255, 0), grid.linetype.squiggly, 4)
     g.addFuncFromString("(1/100)x ^ 2", (255, 0, 0), grid.linetype.squiggly, 4)
     g.addFuncFromString("2x + 10", (255, 0, 255), grid.linetype.dotted, 6)
+    """
+    g.addFuncFromString("(1/9x)^2", (0, 0, 255), grid.linetype.solid, 2)
     surface = c.render()
     running = True
     inputBuffer = {"text": None}
@@ -139,7 +150,7 @@ def main():
         while True:
             inputBuffer["text"] = input("input a new equation: ")
     getInputThread = threading.Thread(target=getInput)
-    getInputThread.start()
+    #getInputThread.start()
     while running:
         if inputBuffer["text"] is not None:
             g.addFuncFromString(inputBuffer["text"], lineWidth=5)

@@ -5,6 +5,10 @@ import postfix
 import time
 import math
 
+def signof(x):
+    return (x >= 0) * 2 - 1
+
+start = next
 
 class linetype:
     solid = 0
@@ -39,27 +43,41 @@ class function:
         self.expression = expression
         self.call = postfix.getFunctionFromPostfix(self.expression)
         self.settings = settings or funcSettings()
-    def drawCurve(self, region):
-        raise NotImplementedError()
 
+class lineStyleGenerators:
+    @staticmethod
+    def drawSolid(surface, lineWidth, lineColor, progress):
+        p1 = yield
+        while (p2 := (yield)) != None:
+            pygame.draw.line(surface, lineColor, p1, p2, 1)
+            progress += 1
+            p1 = p2
 
-def drawSolid(surface, position, lineWidth, lineColor, progress, normal):
-    pygame.draw.circle(surface, lineColor, position, lineWidth/2)
+    @staticmethod
+    def drawDotted(surface, lineWidth, lineColor, progress):
+        p1 = yield
+        while (p2 := (yield)) != None:
+            if math.sin(progress / 50) > 0:
+                pygame.draw.line(surface, lineColor, p1, p2, lineWidth)
+            progress += 1
+            p1 = p2
 
-def drawDotted(surface, position, lineWidth, lineColor, progress, normal):
-    if math.sin(progress / 50) > 0:
-        pygame.draw.circle(surface, lineColor, position, lineWidth/2)
-
-def drawSquiggly(surface, position, lineWidth, lineColor, progress, normal):
-    offset = (math.sin(progress / 80) * 1.5) + (math.sin((progress / 100) + 2) * 2) + (math.sin(progress / 200) * 3)
-    normal += NINETYDEG
-    dx = math.cos(normal) * offset
-    dy = math.sin(normal) * offset
-    position = position[0] + dx, position[1] + dy
-    pygame.draw.circle(surface, lineColor, position, lineWidth/2)
+    @staticmethod
+    def drawSquiggly(surface, lineWidth, lineColor, progress):
+        p1 = yield
+        while (p2 := (yield)) != None:
+            # do something
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            normal = math.atan2(dy, dx) + NINETYDEG
+            offset = (math.sin(progress / 80) * 1.5) + (math.sin((progress / 100) + 2) * 2) + (math.sin(progress / 200) * 3)
+            dx = math.cos(normal) * offset
+            dy = math.sin(normal) * offset
+            p2 = p2[0] + dx, p2[1] + dy
+            p1 = p2
 
 class grid:
-    plotMethods = [drawSolid, drawDotted, drawSquiggly]
+    plotMethods = [lineStyleGenerators.drawSolid, lineStyleGenerators.drawDotted, lineStyleGenerators.drawSquiggly]
     def __init__(self, settings=None):
         self.settings = settings or gridSettings
         self.functions = []
@@ -89,34 +107,40 @@ class grid:
             else:
                 continue
             if axis == "x":
-                newLine = pygame.Rect((-lineweight/2), 0, lineweight, (region.height) * transform[1])
-                newLine.x += grade - region.left - (lineweight / 2)
+                newLine = (grade - region.left, 0), (grade - region.left, region.height * transform[1])
             elif axis == "y":
-                newLine = pygame.Rect(0, lineweight/2, (region.width) * transform[0], lineweight)
-                newLine.y += grade - region.top - (lineweight / 2)
-            pygame.draw.rect(surface, self.settings.lineColor, newLine)
+                newLine = (0, grade - region.top), (region.width * transform[0], grade - region.top)
+            pygame.draw.line(surface, self.settings.lineColor, *newLine, lineweight)
+
     def drawGridlines(self, region, surface):
         self.drawGridlinesForAxis(region, surface, "x")
         self.drawGridlinesForAxis(region, surface, "y")
-    def plotPath(self, surface, relativeRegion, path, lineWidth, lineColor, lineType, step = 1):
+
+    def plotSegment(self, surface, p1, p2, lineColor, lineWidth, lineType, step, progress):
+        dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+        differences = signof(dx), signof(dy)
+        normal = math.atan2(dy, dx)
+        magnitude = math.hypot(dx, dy)
+        plotter = self.plotMethods[lineType](surface, lineWidth, lineColor, progress)
+        start(plotter)
+        if p1 != p2:
+            increment = (dx/magnitude) * step, (dy/magnitude) * step
+        while (signof(dx), signof(dy)) == differences:
+            p1 = increment[0] + p1[0], increment[1] + p1[1]
+            plotter.send(p1)
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+        return magnitude # as progress
+
+    def plotPath(self, surface, path, lineWidth, lineColor, lineType, step = 1):
         progress = 0
         if not path:
             return
-        lastPoint = path.pop(0)
-        for nextPoint in path:
-            dx, dy = nextPoint[0] - lastPoint[0], nextPoint[1] - lastPoint[1]
-            normal = math.atan2(dy, dx)
-            magnitude = math.sqrt((dx ** 2) + (dy ** 2))
-            if lastPoint != nextPoint:
-                increment = (dx/magnitude) * step, (dy/magnitude) * step
-            while lastPoint != nextPoint:
-                if abs(nextPoint[0] - lastPoint[0]) < abs(increment[0]) or abs(nextPoint[1] - lastPoint[1]) < abs(increment[1]):
-                    progress += math.sqrt(((nextPoint[0] - lastPoint[0]) ** 2) + ((nextPoint[1] - lastPoint[1]) ** 2)) * step
-                    lastPoint = nextPoint
-                else:
-                    lastPoint = lastPoint[0] + increment[0], lastPoint[1] + increment[1]
-                    progress += 1 * step
-                self.plotMethods[lineType](surface, lastPoint, lineWidth, lineColor, (progress * 1 / step) * 10, normal)
+        lastPoint = path[0]
+        for nextPoint in path[1:]:
+            progress += self.plotSegment(surface, lastPoint, nextPoint, lineColor, lineWidth, lineType, step, progress)
+            #lastPoint = nextPoint
+
     def plotPathFast(self, surface, path, lineWidth, lineColor, *_):
         if not path:
             return
@@ -143,16 +167,22 @@ class grid:
             step = max(segments // maxSegments, 1)
             yValues = [None, None, None]
             for x in range(rng.start, rng.stop, step):
-                if not yValues[1]:
+                if yValues[1] is None:
                     yValues[1] = -function.call(x)
                 yValues[2] = -function.call(x + 1)
                 y = yValues[1]
                 point = (x, y)
                 point = grid.translateToRegion(point, region)
-                if not all((yValue is not None and not 0 < yValue - region.top < region.height for yValue in yValues)):
+                onScreen = False
+                for yValue in yValues:
+                    if yValue is None:
+                        continue
+                    if (0 < (yValue - region.top) < region.height):
+                        onScreen = True
+                if onScreen:
                     path.append(point)
                 yValues = [yValues[1], yValues[2], None]
-            self.plotPath(surface, region, path, width, color, typ, 3)
+            self.plotPath(surface, path, width, color, typ, 10)
         return
     
     def labelXAxis(self, region, surface):

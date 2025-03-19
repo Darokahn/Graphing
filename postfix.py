@@ -5,6 +5,9 @@ class operators(float):
     def __neg__(arg):
         return -arg
 
+class mystack(list):
+    push = list.append
+
 class operator:
     opMap = {
             "+": "add",
@@ -73,7 +76,7 @@ def strToInfix(string):
             (variable, False),
             (operator, True)
             ]
-    stack = []
+    stack = mystack()
     accum = ""
     count = -1
     while (count := count + 1) < len(string):
@@ -81,7 +84,7 @@ def strToInfix(string):
         accum += char
         for method, consumesLast in methods:
             try:
-                stack.append(method(accum))
+                stack.push(method(accum))
                 accum = ""
                 if not consumesLast:
                     count -= 1
@@ -100,21 +103,21 @@ def isPrior(item, compare):
 
 def addOperator(stack, operatorStack, op):
     if len(operatorStack) == 0 or operatorStack[-1].name == "(" and op.name != ")":
-        operatorStack.append(op)
+        operatorStack.push(op)
         return
     if op.name == ")":
         while (nextOp := operatorStack.pop()).name != "(":
-            stack.append(nextOp)
+            stack.push(nextOp)
         return
     if isPrior(op.name, operatorStack[-1].name):
-        operatorStack.append(op)
+        operatorStack.push(op)
         return
-    stack.append(operatorStack.pop())
-    operatorStack.append(op)
+    stack.push(operatorStack.pop())
+    operatorStack.push(op)
 
 def infixToPostfix(infix):
-    stack = []
-    operatorStack = []
+    stack = mystack()
+    operatorStack = mystack()
     for index in range(len(infix)):
         item = infix[index]
         if isinstance(item, variable):
@@ -123,9 +126,9 @@ def infixToPostfix(infix):
             isinstance(infix[index-1], operator) and infix[index-1].name == ")"
             ):
                 addOperator(stack, operatorStack, operator("*"))
-            stack.append(item)
+            stack.push(item)
         if isinstance(item, (float, int)):
-            stack.append(item)
+            stack.push(item)
             continue
         if isinstance(item, operator):
             if (item.name == "sub" and (index == 0 or isinstance(infix[index - 1], operator))):
@@ -135,25 +138,25 @@ def infixToPostfix(infix):
     return stack
 
 def calculatePostfix(postfixList):
-    stack = []
+    stack = mystack()
     for item in postfixList:
         if isinstance(item, variable):
             raise ValueError("Convert all variables to constant expressions")
         if isinstance(item, (int, float)):
-            stack.append(float(item))
+            stack.push(float(item))
             continue
         if isinstance(item, operator):
             if item.binary:
                 if len(stack) >= 2:
                     op2 = stack.pop()
                     op1 = stack.pop()
-                    stack.append(item(op1, op2))
+                    stack.push(item(op1, op2))
                 else:
                     raise ValueError("attempt to perform binary operation on stack of length <=1")
             else:
                 if len(stack) >= 1:
                     op = stack.pop()
-                    stack.append(item(op))
+                    stack.push(item(op))
                 else:
                     raise ValueError("attempt to perform unary operation on stack of length 0")
     if len(stack) > 1:
@@ -205,15 +208,14 @@ def calculateStr(string):
 
 def main():
     test_expressions = [
-        "-5 - 1",
-        "3x + 12 - 13 + (500 * 3)",
-        "4x"
+        "x^3"
     ]
 
     for expr in test_expressions:
         try:
             result = getFunc(expr)
-            print(f"f(3): {result(3, 2, 1, 3)}")
+            print(f"f(3): {result(3)}")
+            print(f"f(-): {result(-3)}")
         except Exception as e:
             print(f"Error evaluating '{expr}': {e}")
 
